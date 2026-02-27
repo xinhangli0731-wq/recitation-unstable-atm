@@ -1,0 +1,12 @@
+1. Your test suite properly identified the correct solution!
+
+2. Your test suite properly identified an incorrect solution!
+
+3. Your test suite properly identified an incorrect solution!
+
+4. Your test suite did not perform as expected.
+HINT: Does the account's balance appear as expected after we make a deposit?
+
+5. Your test suite properly identified an incorrect solution!
+
+score: 4/5
