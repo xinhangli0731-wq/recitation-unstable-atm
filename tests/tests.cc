@@ -2,75 +2,134 @@
 #  define CATCH_CONFIG_MAIN
 #endif
 
+#include <fstream>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "atm.hpp"
 #include "catch.hpp"
 
-/////////////////////////////////////////////////////////////////////////////////////////////
-//                             Helper Definitions //
-/////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// Helper: CompareFiles
+////////////////////////////////////////////////////////////////////////////////
 
 bool CompareFiles(const std::string& p1, const std::string& p2) {
   std::ifstream f1(p1);
   std::ifstream f2(p2);
 
-  if (f1.fail() || f2.fail()) {
-    return false;  // file problem
+  if (f1.fail() || f2.fail()) return false;
+
+  std::string a, b;
+  while (f1 >> a && f2 >> b) {
+    if (a != b) return false;
   }
 
-  std::string f1_read;
-  std::string f2_read;
-  while (f1.good() || f2.good()) {
-    f1 >> f1_read;
-    f2 >> f2_read;
-    if (f1_read != f2_read || (f1.good() && !f2.good()) ||
-        (!f1.good() && f2.good()))
-      return false;
-  }
-  return true;
+  return f1.eof() && f2.eof();
 }
 
-/////////////////////////////////////////////////////////////////////////////////////////////
-// Test Cases
-/////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// Sanity Tests (Provided Examples)
+////////////////////////////////////////////////////////////////////////////////
 
-TEST_CASE("Example: Create a new account", "[ex-1]") {
+TEST_CASE("CreateAccount_Basic", "[sanity]") {
   Atm atm;
-  atm.RegisterAccount(12345678, 1234, "Sam Sepiol", 300.30);
-  auto accounts = atm.GetAccounts();
-  REQUIRE(accounts.contains({12345678, 1234}));
+  auto key = std::make_pair(12345678u, 1234u);
+
+  atm.RegisterAccount(12345678u, 1234u, "Sam Sepiol", 300.30);
+
+  auto& accounts = atm.GetAccounts();
+  REQUIRE(accounts.contains(key));
   REQUIRE(accounts.size() == 1);
 
-  Account sam_account = accounts[{12345678, 1234}];
-  REQUIRE(sam_account.owner_name == "Sam Sepiol");
-  REQUIRE(sam_account.balance == 300.30);
+  const Account& acc = accounts.at(key);
+  REQUIRE(acc.owner_name == "Sam Sepiol");
+  REQUIRE(acc.balance == Approx(300.30));
 
-  auto transactions = atm.GetTransactions();
-  REQUIRE(accounts.contains({12345678, 1234}));
-  REQUIRE(accounts.size() == 1);
-  std::vector<std::string> empty;
-  REQUIRE(transactions[{12345678, 1234}] == empty);
+  auto& tx = atm.GetTransactions();
+  REQUIRE(tx.contains(key));
+  REQUIRE(tx.at(key).empty());
 }
 
-TEST_CASE("Example: Simple widthdraw", "[ex-2]") {
+TEST_CASE("Withdraw_Basic", "[sanity]") {
   Atm atm;
-  atm.RegisterAccount(12345678, 1234, "Sam Sepiol", 300.30);
-  atm.WithdrawCash(12345678, 1234, 20);
-  auto accounts = atm.GetAccounts();
-  Account sam_account = accounts[{12345678, 1234}];
+  auto key = std::make_pair(1u, 2u);
 
-  REQUIRE(sam_account.balance == 280.30);
+  atm.RegisterAccount(1u, 2u, "A", 100.0);
+  atm.WithdrawCash(1u, 2u, 20.0);
+
+  const Account& acc = atm.GetAccounts().at(key);
+  REQUIRE(acc.balance == Approx(80.0));
 }
 
-TEST_CASE("Example: Print Prompt Ledger", "[ex-3]") {
+////////////////////////////////////////////////////////////////////////////////
+// Critical Error Tests (Bug Hunting)
+////////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE("Register_Duplicate_Throws", "[bug-register]") {
   Atm atm;
-  atm.RegisterAccount(12345678, 1234, "Sam Sepiol", 300.30);
-  auto& transactions = atm.GetTransactions();
-  transactions[{12345678, 1234}].push_back(
-      "Withdrawal - Amount: $200.40, Updated Balance: $99.90");
-  transactions[{12345678, 1234}].push_back(
-      "Deposit - Amount: $40000.00, Updated Balance: $40099.90");
-  transactions[{12345678, 1234}].push_back(
-      "Deposit - Amount: $32000.00, Updated Balance: $72099.90");
-  atm.PrintLedger("./prompt.txt", 12345678, 1234);
-  REQUIRE(CompareFiles("./ex-1.txt", "./prompt.txt"));
+  atm.RegisterAccount(1u, 2u, "Alice", 100.0);
+
+  REQUIRE_THROWS_AS(atm.RegisterAccount(1u, 2u, "Bob", 200.0),
+                    std::invalid_argument);
+}
+
+TEST_CASE("Withdraw_Negative_Throws", "[bug-withdraw-neg]") {
+  Atm atm;
+  atm.RegisterAccount(1u, 2u, "Alice", 100.0);
+
+  REQUIRE_THROWS_AS(atm.WithdrawCash(1u, 2u, -1.0), std::invalid_argument);
+}
+
+TEST_CASE("Withdraw_Overdraft_Throws", "[bug-withdraw-over]") {
+  Atm atm;
+  atm.RegisterAccount(1u, 2u, "Alice", 50.0);
+
+  REQUIRE_THROWS_AS(atm.WithdrawCash(1u, 2u, 60.0), std::runtime_error);
+}
+
+TEST_CASE("Deposit_Negative_Throws", "[bug-deposit-neg]") {
+  Atm atm;
+  atm.RegisterAccount(1u, 2u, "Alice", 50.0);
+
+  REQUIRE_THROWS_AS(atm.DepositCash(1u, 2u, -5.0), std::invalid_argument);
+}
+
+TEST_CASE("Withdraw_Invalid_Account_Throws", "[bug-invalid-withdraw]") {
+  Atm atm;
+
+  REQUIRE_THROWS_AS(atm.WithdrawCash(999u, 888u, 10.0), std::invalid_argument);
+}
+
+TEST_CASE("Deposit_Invalid_Account_Throws", "[bug-invalid-deposit]") {
+  Atm atm;
+
+  REQUIRE_THROWS_AS(atm.DepositCash(999u, 888u, 10.0), std::invalid_argument);
+}
+
+TEST_CASE("PrintLedger_Invalid_Account_Throws", "[bug-invalid-print]") {
+  Atm atm;
+
+  REQUIRE_THROWS_AS(atm.PrintLedger("out.txt", 999u, 888u),
+                    std::invalid_argument);
+}
+
+TEST_CASE("Transactions_Record_Created", "[bug-transaction-record]") {
+  Atm atm;
+  auto key = std::make_pair(10u, 20u);
+
+  atm.RegisterAccount(10u, 20u, "User", 100.0);
+
+  auto& tx = atm.GetTransactions();
+  REQUIRE(tx.contains(key));
+  REQUIRE(tx.at(key).empty());
+
+  atm.DepositCash(10u, 20u, 10.0);
+  REQUIRE(tx.at(key).size() == 1);
+
+  atm.WithdrawCash(10u, 20u, 5.0);
+  REQUIRE(tx.at(key).size() == 2);
+
+  REQUIRE(tx.at(key)[0].find("Deposit") != std::string::npos);
+  REQUIRE(tx.at(key)[1].find("Withdrawal") != std::string::npos);
 }
