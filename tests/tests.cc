@@ -133,3 +133,16 @@ TEST_CASE("Transactions_Record_Created", "[bug-transaction-record]") {
   REQUIRE(tx.at(key)[0].find("Deposit") != std::string::npos);
   REQUIRE(tx.at(key)[1].find("Withdrawal") != std::string::npos);
 }
+
+TEST_CASE("Deposit_Updates_Balance", "[critical]") {
+  Atm atm;
+  const auto key = std::make_pair(11111111u, 2222u);
+
+  atm.RegisterAccount(11111111u, 2222u, "Alice", 10.00);
+
+  atm.DepositCash(11111111u, 2222u, 25.50);
+
+  auto& accounts = atm.GetAccounts();
+  REQUIRE(accounts.contains(key));
+  REQUIRE(accounts.at(key).balance == Approx(35.50));
+}
